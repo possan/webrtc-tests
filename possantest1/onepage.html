@@ -1,0 +1,28 @@
+<html>
+<head>
+<script src="/js/jquery-1.8.2.min.js"></script>
+<script src="/js/require.js"></script>
+<script>
+
+	function a() {
+		loadpage('main');
+	}
+
+	function loadpage(n) {
+		require('pages/'+n+'.js', function(page) {
+			console.log('page loaded', page);
+		});
+	}
+
+</script>
+</head>
+<body onload="a()">
+	<div id="content"></div>
+
+	<script type="text/x-handlebars" data-template-name="application">
+	  <h1>Hi Ember</h1>
+	  <p {{bindAttr class="isSlogan"}} >Ember is: {{slogan}}</p>
+	</script>
+
+</body>
+</html>

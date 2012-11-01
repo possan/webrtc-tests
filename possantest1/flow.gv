@@ -1,0 +1,38 @@
+digraph {
+
+	start -> room_with_random_url [label = "Create room"]
+
+	room_with_random_url -> enable_video
+
+	enable_video -> waiting_for_peer
+
+	waiting_for_peer -> peer_connected
+
+	waiting_for_peer -> start
+
+	peer_connected -> game_loop
+
+	game_loop -> peer_quit
+	game_loop -> game_over
+
+	game_loop -> game_loop_peer_disappeared
+	game_loop_peer_disappeared -> game_loop
+	game_loop_peer_disappeared -> start
+
+	game_over -> peer_quit
+	game_over -> game_loop
+
+	peer_connected -> peer_quit
+
+	peer_quit -> waiting_for_peer
+
+
+
+
+
+
+
+
+
+
+}

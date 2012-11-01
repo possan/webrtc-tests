@@ -1,0 +1,1137 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+  <title>#{{ room_key }} init={{ initiator }}, user={{ me }}, users=[{{ room_user1 }}, {{ room_user2 }}]</title>
+<link rel="canonical" href="{{ room_link }}"/>
+<meta http-equiv="X-UA-Compatible" content="chrome=1"/>
+<script src="/js/require.js" type="text/javascript"></script>
+<script src="/js/observable.js" type="text/javascript"></script>
+<script src="/js/Players.js" type="text/javascript"></script>
+<script src="/_ah/channel/jsapi"></script>
+<!-- type="text/javascript">
+  (function() {
+    var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true;
+    po.src = 'https://apis.google.com/js/plusone.js';
+    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
+  })();
+-->
+<style type="text/css">
+  /*
+  a:link { color: #ffffff; }
+  a:visited {color: #ffffff; }
+  html, body {
+    background-color: #444;
+    height: 100%;
+    font-family:Verdana, Arial, Helvetica, sans-serif;
+  }
+  body {
+    margin: 0;
+    padding: 0;
+  }
+  #container {
+    background-color: #555;
+    position: relative;
+    min-height: 100%;
+    width: 100%;
+    margin: 0px auto;
+    -webkit-perspective: 1000;
+  }
+  #card {
+    -webkit-transition-property: rotation;
+    -webkit-transition-duration: 2s;
+  }
+  #local {
+    position: absolute;
+    width: 100%;
+    -webkit-transform: scale(-1, 1);
+    -webkit-backface-visibility: hidden;
+  }
+  #remote {
+    position: absolute;
+    width: 100%;
+    -webkit-transform: rotateY(180deg);
+    -webkit-backface-visibility: hidden;
+  }
+  #mini {
+    position: absolute;
+    height: 30%;
+    width: 30%;
+    bottom: 32px;
+    right: 4px;
+    -webkit-transform: scale(-1, 1);
+    opacity: 1.0;
+    //-webkit-transform: rotateY(180deg);
+    //-webkit-backface-visibility: hidden;
+  } */
+  
+  #localVideo {
+    opacity: 0.5;
+    -webkit-transition-property: opacity;
+    -webkit-transition-duration: 2s;
+  }
+  #remoteVideo {
+    opacity: 0.5;
+    -webkit-transition-property: opacity;
+    -webkit-transition-duration: 2s;
+  }
+  #miniVideo {
+    opacity: 0.5;
+    -webkit-transition-property: opacity;
+    -webkit-transition-duration: 2s;
+  }
+  /*
+  #footer {
+    spacing: 4px;
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 28px;
+    background-color: #3F3F3F;
+    color: rgb(255, 255, 255);
+    font-size:13px; font-weight: bold;
+    line-height: 28px;
+    text-align: center;
+  }
+  #hangup {
+   font-size:13px; font-weight:bold;
+   color:#FFFFFF;
+   width:128px;
+   height:24px;
+   background-color:#808080;
+   border-style:solid;
+   border-color:#FFFFFF;
+   margin:2px;
+  }
+  #logo {
+    display: block;
+    top:4;
+    right:4;
+    position:absolute;
+    float:right;
+    opacity: 0.5;
+  }
+  */
+
+  a.blink1 { background-color:#f00; }
+  a.blink2 { background-color:#faa; }
+
+</style>
+</head>
+<body>
+<script type="text/javascript">
+
+
+
+
+
+
+
+
+
+
+
+
+  var initiator = {{ initiator }};
+
+  var players = new Players({
+    initiator: '{{ initiator }}' == '1',
+    user: '{{ me }}'
+  });
+
+  var localVideo;
+  var miniVideo;
+  var remoteVideo;
+  var localStream;
+  var remoteStream;
+  var channel;
+  var started = false;
+  var mediaConstraints = {'has_audio':true, 'has_video':true};
+  var isVideoMuted = false;
+  var isAudioMuted = false;
+  var noLocalVideo = '{{ novideo }}';
+  var room_seed = {{ room_seed }};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  var UI = {};
+
+  UI.setStatus = function(status) {
+    console.info('UI Set status: '+status);
+    var el = document.getElementById('status');
+    el.innerText = status;
+
+  }
+
+  UI.highlightAction = function(actionindex) {
+    console.info('UI Highlight action #'+actionindex);
+    var el = document.getElementById('a'+actionindex);
+    el.className = 'blink1';
+    setTimeout(function() { el.className = 'blink2'; }, 250);
+    setTimeout(function() { el.className = ''; }, 500);
+  }
+
+  UI.transitionToActive = function() {
+    console.log('transitionToActive');
+    localVideo.style.opacity = 0.5;
+    remoteVideo.style.opacity = 1;
+    miniVideo.style.opacity = 1;
+    // card.style.webkitTransform = "rotateY(180deg)";
+    /* setTimeout(function() { localVideo.src = ""; }, 500);*/
+    /* setTimeout(function() { miniVideo.style.opacity = 1; }, 1000);*/
+    // UI.setStatus("<input type=\"button\" id=\"hangup\" value=\"Hang up\" onclick=\"onHangup()\" />");
+  }
+
+  UI.transitionToWaiting = function() {
+    console.log('transitionToWaiting');
+    // card.style.webkitTransform = "rotateY(0deg)";
+    // setTimeout(function() { localVideo.src = miniVideo.src; miniVideo.src = ""; remoteVideo.src = "" }, 500);
+    // localVideo.src = miniVideo.src;
+    // miniVideo.src = "";
+    // remoteVideo.src = "";
+    // }, 500);
+    localVideo.style.opacity = 1.0;
+    miniVideo.style.opacity = 0.5;
+    remoteVideo.style.opacity = 0.5;
+    resetStatus();
+  }
+
+  UI.transitionToDone = function() {
+    console.log('transitionToDone');
+    localVideo.style.opacity = 0.5;
+    remoteVideo.style.opacity = 0.5;
+    miniVideo.style.opacity = 0.5;
+    // UI.setStatus("You have left the call. <a href=\"{{ room_link }}\">Click here</a> to rejoin.");
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  var COMM = {
+    listener: null,
+    socket: null,
+    ready: false,
+    observable: new Observable()
+  };
+
+  COMM.connect = function(token, roomkey) {
+    COMM.token = token;
+    COMM.room = roomkey;
+    COMM.observable.fire({type: 'connecting'});
+    console.log('COMM Opening channel...');
+    var channel = new goog.appengine.Channel(token);
+    var handler = {
+      'onopen': function() {
+        COMM.ready = true;
+        COMM.observable.fire({type: 'connected', user: '{{ me }}'});
+      },
+      'onmessage': function(message) {
+        var data = JSON.parse(message.data);
+        // console.log('incoming message', message);
+        console.log('COMM S->C:', data);
+        COMM.observable.fire({type: 'message', message: data});
+      },
+      'onerror': function() {
+        console.log('COMM Channel error.');
+        COMM.observable.fire({type: 'error'});
+      },
+      'onclose': function() {
+        console.log('COMM Channel closed.');
+        COMM.observable.fire({type: 'closed'});
+        COMM.ready = false;
+      }
+    };
+    COMM.socket = channel.open(handler);
+  }
+
+  COMM.listen = function(listener) {
+    COMM.observable.listen(listener);
+  }
+
+  COMM.disconnect = function() {
+    console.log('COMM Disconnecting...');
+    COMM.observable.fire({type: 'disconnecting'});
+    COMM.socket.close();
+  }
+
+  COMM.send = function(message) {
+    console.log('COMM C->S:', message);
+    var msgString = JSON.stringify(message);
+    path = '/message?r='+encodeURIComponent(COMM.room);
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', path, true);
+    xhr.send(msgString);
+  }
+
+  COMM.sendSync = function(message) {
+    var msgString = JSON.stringify(message);
+    console.log('COMM C->S (sync): ' + msgString);
+    path = '/message?r='+encodeURIComponent(COMM.room);
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', path, false);
+    xhr.send(msgString);
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  var pc;
+  // var isRTCPeerConnection = true;
+
+  var PEER = {
+    listener: null,
+    ready: false,
+    observable: new Observable()
+  };
+
+  PEER.connect = function(pc_config) {
+    pc = null;
+    PEER.ready = false;
+    console.log('PEER: connect...');
+    console.log('pc_config', pc_config);
+    PEER.observable.fire({type:'connecting'});
+    try {
+      PEER.observable.fire({type:'trying', type:1});
+      // try method 1
+
+
+      pc = new webkitRTCPeerConnection(pc_config);
+      pc.onicecandidate = function(event) {
+        if (event.candidate) {
+          PEER.observable.fire({
+            type: 'candidate',
+            label: event.candidate.sdpMLineIndex,
+            id: event.candidate.sdpMid,
+            candidate: event.candidate.candidate
+          });
+        } else {
+          console.log("End of candidates.");
+        }
+      };
+      isRTCPeerConnection = true;
+      PEER.ready = true;
+      console.log("Created webkitRTCPeerConnnection with config \"" + JSON.stringify(pc_config) + "\".");
+/*
+
+
+        var stun_server = "";
+        if (pc_config.iceServers.length !== 0) {
+          stun_server = pc_config.iceServers[0].url.replace('stun:', 'STUN ');
+        }
+        pc = new webkitRTCPeerConnection(stun_server, function(candidate, moreToFollow) {
+          if (candidate) {
+            PEER.observable.fire({
+              type: 'candidate',
+              label: candidate.label,
+              candidate: candidate.toSdp()
+            });
+          }
+          if (!moreToFollow) {
+            console.log("End of candidates.");
+          }
+        });
+        PEER.ready = true;
+        isRTCPeerConnection = false;
+
+*/
+
+
+
+
+
+
+
+
+
+
+    } catch (e) {
+      /*
+      try {
+        PEER.observable.fire({type:'trying', type:2});
+        // try second method
+
+
+
+
+
+
+
+
+
+
+
+
+      pc = new webkitRTCPeerConnection(pc_config);
+      pc.onicecandidate = function(event) {
+        if (event.candidate) {
+          PEER.observable.fire({
+            type: 'candidate',
+            label: event.candidate.sdpMLineIndex,
+            id: event.candidate.sdpMid,
+            candidate: event.candidate.candidate
+          });
+        } else {
+          console.log("End of candidates.");
+        }
+      };
+        isRTCPeerConnection = true;
+      console.log("Created webkitRTCPeerConnnection with config \"" + JSON.stringify(pc_config) + "\".");
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        console.log("Created webkitPeerConnnection00 with config \"" + stun_server + "\".");
+      } catch (e) { */
+        // give up.
+        console.log("Failed to create PeerConnection, exception: " + e.message);
+        // alert("Cannot create PeerConnection object; Is the 'PeerConnection' flag enabled in about:flags?");
+        PEER.observable.fire({type:'failed'});
+        return;
+      // }
+    }
+
+    if(pc) {
+      pc.onconnecting = function(message) {
+        console.log("PEER: Session connecting.");
+        PEER.observable.fire({type:'connecting'});
+      };
+
+      pc.onopen = function(message) {
+        console.log("PEER: Session opened.");
+        PEER.observable.fire({type:'connected'});
+      };
+
+      pc.onaddstream = function(event) {
+        var url = webkitURL.createObjectURL(event.stream);
+        console.error("PEER: Remote stream added.");
+        PEER.observable.fire({type:'add-stream', url:url, stream:event.stream});
+      };
+
+      pc.onremovestream = function(event) {
+        console.log("PEER: Remote stream removed.");
+        PEER.observable.fire({type:'remove-stream'});
+      };
+    }
+  }
+
+  PEER.listen = function(listener) {
+    PEER.observable.listen(listener);
+  }
+
+  PEER.gotAnswer = function(msg) {
+    console.log('Peer sent answer.', msg);
+    // if (isRTCPeerConnection) {
+    if (PEER.ready)
+      pc.setRemoteDescription(new RTCSessionDescription({
+        type: 'answer',
+        sdp: msg.sdp
+      }));
+    else
+      console.log('unable to add candidate, peer connection not ready.');
+    //} else {
+    //  pc.setRemoteDescription(pc.SDP_ANSWER, new SessionDescription(msg.sdp));
+    //}
+  }
+
+  PEER.addCandidate = function(msg) {
+    // console.log('PEER addcandidate', msg);
+    // if (isRTCPeerConnection) {
+    // var candidate = new RTCIceCandidate({sdpMLineIndex:msg.label, candidate:msg.candidate});
+    if (PEER.ready) {
+       var candidate = new RTCIceCandidate({sdpMLineIndex:msg.label, candidate:msg.candidate});
+      pc.addIceCandidate(candidate);
+    } else
+      console.log('unable to add candidate, peer connection not ready.');
+    //} else {
+    //  var candidate = new IceCandidate(msg.label, msg.candidate);
+    //  pc.processIceMessage(candidate);
+    // }
+  }
+
+  PEER.gotOffer = function(msg) {
+    console.log("PEER: gotOffer", msg);
+    // We only know JSEP version after createPeerConnection().
+    if (msg.sdp != '') {
+      // if (!isRTCPeerConnection)
+      //   pc.setRemoteDescription(pc.SDP_OFFER, new SessionDescription(msg.sdp));
+      // else
+      if (PEER.ready)
+        pc.setRemoteDescription(new RTCSessionDescription({
+          type: 'offer',
+          sdp: msg.sdp
+        }));
+      else
+        console.log('unable to set remote description, peer connection not ready.');
+    }
+  }
+
+  function setLocalAndSendMessage(sessionDescription) {
+    pc.setLocalDescription(sessionDescription);
+    COMM.send(sessionDescription);
+  }
+
+  PEER.createOffer = function() {
+    var sdp = '';
+    console.log("PEER: createOffer");
+    // if (isRTCPeerConnection) {
+    if (PEER.ready)
+      pc.createOffer(setLocalAndSendMessage, null, mediaConstraints);
+    else
+      console.log('unable to create offer, peer connection not ready.');
+    // } else {
+    //   var offer = pc.createOffer(mediaConstraints);
+    //  pc.setLocalDescription(pc.SDP_OFFER, offer);
+    //  sdp = offer.toSdp();
+    //  pc.startIce();
+    // }
+    return sdp;
+  }
+
+  PEER.createAnswer = function() {
+    var sdp = '';
+    console.log("PEER: createAnswer");
+   // if (isRTCPeerConnection) {
+   if (PEER.ready)
+      pc.createAnswer(setLocalAndSendMessage, null, mediaConstraints);
+   else
+      console.log('unable to create answer, peer connection not ready.');
+   /* } else {
+      var offer = pc.remoteDescription;
+      var answer = pc.createAnswer(offer.toSdp(), mediaConstraints);
+      console.log('pc', pc);
+      pc.setLocalDescription(pc.SDP_ANSWER, answer);
+      sdp = answer.toSdp();
+      pc.startIce();
+    } */
+    return sdp;
+  }
+
+  PEER.startStreaming = function(str) {
+    console.log("PEER: Start streaming; Adding local stream.", str);
+    if (PEER.ready)
+      pc.addStream(str);
+  }
+
+
+
+
+  var CAMERA = {
+    observable: new Observable()
+  };
+
+  CAMERA.listen = function(listener) {
+    CAMERA.observable.listen(listener);
+  }
+
+  CAMERA.connect = function() {
+    // CAMERA.observable.fire({type: 'failed'});
+    // return;
+
+    function onUserMediaSuccess(stream) {
+      console.log("User has granted access to local media.");
+      var url = webkitURL.createObjectURL(stream);
+      CAMERA.observable.fire({type:'connected', stream:stream, url:url});
+    }
+
+    function onUserMediaError(error) {
+      console.log("Failed to get access to local media. Error code was " + error.code);
+      // alert("Failed to get access to local media. Error code was " + error.code + ".");
+      CAMERA.observable.fire({type: 'failed'});
+    }
+
+    CAMERA.observable.fire({type:'connecting'});
+    if (noLocalVideo == 1) {
+      console.log('Skipping local video');
+      CAMERA.observable.fire({type: 'failed'});
+    } else {
+      try {
+        // try method 1
+        console.log('Requesting access to camera, method 1...');
+         navigator.webkitGetUserMedia({'audio':true, 'video':true}, onUserMediaSuccess, onUserMediaError);
+        console.log("Requested access to local media with new syntax.");
+      } catch (e) {
+        try {
+          // try method 2
+          console.log('Requesting access to camera, method 2...');
+           navigator.webkitGetUserMedia("video,audio", onUserMediaSuccess, onUserMediaError);
+          console.log("Requested access to local media with old syntax.");
+        } catch (e) {
+          // alert("webkitGetUserMedia() failed. Is the MediaStream flag enabled in about:flags?");
+          console.log("webkitGetUserMedia failed with exception: " + e.message);
+          CAMERA.observable.fire({type: 'failed'});
+        }
+      }
+    }
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+  function doCall() {
+    console.log("Sending offer to peer.");
+    var sdp = PEER.createOffer();
+    // COMM.send({type: 'offer', sdp: sdp});
+  }
+
+
+
+  function doAnswer() {
+    console.log("Sending answer to peer.");
+    var sdp = PEER.createAnswer();
+    // COMM.send({type: 'answer', sdp: sdp});
+  }
+
+  function commcallback_message(msg) {
+    console.log('incoming message', msg);
+
+
+    players.handleNetwork(msg);
+
+
+
+    if (msg.type === 'action') {
+      UI.highlightAction(msg.action);
+    } else if (msg.type === 'ping') {
+      console.log('Got ping, sending pong.');
+      COMM.send({type:'pong'});
+      // doCall();
+    } else if (msg.type === 'pong') {
+      console.log('Got pong, trying to call..');
+      // doCall();
+    } else if (msg.type === 'hello') {
+      console.log('Got hello, trying to call..');
+      // doCall();
+    } else if (msg.type === 'offer') {
+      PEER.gotOffer(msg);
+      doAnswer();
+ //     players.ready();
+    } else if (msg.type === 'peer-connected') {
+      UI.setStatus('Peer connected and ok');
+   //   players.ready();
+    } else if (msg.type === 'peer-connected') {
+      UI.setStatus('Peer connected. initiator='+initiator);
+    } else if (msg.type === 'video-ready') {
+      console.log('Peer video is ready.');
+      // players.ready();
+      // doCall();
+      /// maybeStart();
+    } else if (msg.type === 'answer') {
+      PEER.gotAnswer(msg);
+    } else if (msg.type === 'candidate') {
+      PEER.addCandidate(msg);
+    } else if (msg.type === 'bye') {
+      UI.setStatus('Peer disconnected.');
+      UI.transitionToWaiting();
+    }
+  }
+
+  function commcallback(event) {
+    switch(event.type) {
+      case 'connecting':
+        UI.setStatus('Creating connection...');
+        break;
+      case 'connected':
+        {
+          UI.setStatus('Connected.');
+          players.connect();
+          // COMM.send({type:'peer-connected'});
+          // if (initiator)
+          //   maybeStart();
+        }
+        break;
+      case 'message':
+        commcallback_message(event.message);
+        break;
+    }
+  }
+
+  function waitForRemoteVideo() {
+    UI.setStatus('Waiting for remote video!');
+    if (remoteStream.videoTracks.length > 0 /* was === 0 */ || remoteVideo.currentTime > 0) {
+      UI.setStatus('Got remote video!');
+      UI.transitionToActive();
+    } else {
+      setTimeout(waitForRemoteVideo, 500);
+    }
+  }
+
+  function peercallback(event) {
+    switch(event.type) {
+      case 'candidate':
+        // send candidate to other end...
+        COMM.send({
+          type: 'candidate',
+          label: event.label,
+          candidate: event.candidate
+        });
+        break;
+      case 'add-stream':
+        {
+          UI.setStatus('Got remote stream!');
+          // miniVideo.src = localVideo.src;
+          remoteVideo.src = event.url;
+          remoteStream = event.stream;
+          waitForRemoteVideo();
+        }
+        break;
+      case 'connecting':
+        UI.setStatus('Creating PeerConnection...');
+        break;
+    }
+  }
+
+  function playerlocallisten(event) {
+    console.log('player local event (outgoing)', event);
+    switch (event.type) {
+      case 'accepted':
+        UI.setStatus('Local player accepted by remote');
+        // players.ready();
+        // maybeStart();
+        break;
+      case 'peer-connected':
+        UI.setStatus('Local peer-connected event');
+        // players.ready();
+        // maybeStart();
+        break;
+      case 'pause':
+        UI.setStatus('Pause game!');
+        break;
+      case 'start':
+        UI.setStatus('Start game!');
+        // connect peer junk
+        // doCall();
+        // maybeStart();
+        break;
+      case 'become-initiator':
+        UI.setStatus('Become initiator!');
+        break;
+    }
+  }
+
+  function playernetworklisten(event) {
+    console.log('player network event (outgoing)', event);
+    COMM.send(event);
+  }
+
+  function cameracallback(event) {
+    switch(event.type) {
+      case 'connecting':
+        UI.setStatus('Waiting for camera...');
+        break;
+      case 'connected':
+        {
+          UI.setStatus('Camera alive!');
+          localVideo.style.opacity = 1;
+          localVideo.src = event.url;
+          miniVideo.src = event.url;
+          localStream = event.stream;
+          // if (initiator)
+          //  maybeStart();
+          setTimeout(function() {
+            // doCall();
+            COMM.send({type:'video-ready'});
+            COMM.send({type:'ping'});
+          }, 300);
+        }
+        break;
+      case 'failed':
+        UI.setStatus('No camera available!');
+        break;
+    }
+  }
+
+  function initialize() {
+    UI.setStatus('Initializing...');
+
+    console.log("Initializing; room={{ room_key }}.");
+    card = document.getElementById("card");
+    localVideo = document.getElementById("localVideo");
+    miniVideo = document.getElementById("miniVideo");
+    remoteVideo = document.getElementById("remoteVideo");
+    resetStatus();
+
+    COMM.listen(commcallback);
+    PEER.listen(peercallback);
+    CAMERA.listen(cameracallback);
+    players.local.listen(playerlocallisten);
+    players.network.listen(playernetworklisten);
+
+    COMM.connect('{{ token }}', '{{ room_key }}');
+    COMM.send({type:'hello'});
+    CAMERA.connect();
+
+    document.getElementById('a1').addEventListener('click', function(e) {
+      COMM.send({type: 'action', action: 1 });
+      UI.highlightAction(1);
+    });
+    document.getElementById('a2').addEventListener('click', function(e) {
+      COMM.send({type: 'action', action: 2 });
+      UI.highlightAction(2);
+    });
+    document.getElementById('a3').addEventListener('click', function(e) {
+      COMM.send({type: 'action', action: 3 });
+      UI.highlightAction(3);
+    });
+    document.getElementById('a4').addEventListener('click', function(e) {
+      COMM.send({type: 'action', action: 4 });
+      UI.highlightAction(4);
+    });
+    document.getElementById('call').addEventListener('click', function(e) {
+      doCall();
+    });
+    document.getElementById('ready').addEventListener('click', function(e) {
+      players.ready();
+    });
+    document.getElementById('maybestart').addEventListener('click', function(e) {
+      maybeStart();
+    });
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  var App = {};
+
+
+
+
+
+
+
+
+
+
+
+
+
+  function resetStatus() {
+    /*
+    if (!initiator) {
+      UI.setStatus("Waiting for someone to join: <a href=\"{{ room_link }}\">{{ room_link }}</a>");
+    } else {
+      UI.setStatus("Initializing...");
+    }
+    */
+  }
+
+  function maybeStart() {
+
+
+
+
+
+
+    console.log('maybestart...');
+/*    if (started) {
+      console.log('not starting, because already started.');
+      return;
+    }
+    if (!localStream) {
+      console.log('not starting, local stream not ready.');
+      return;
+    }
+    if (!COMM.ready) {
+      console.log('not starting, COMM not ready.');
+      return;
+    }
+    UI.setStatus("Connecting...");
+ */
+    PEER.connect({{ pc_config|safe }});
+    PEER.startStreaming(localStream);
+ //   started = true;
+    // Caller initiates offer to peer.
+    if (initiator)
+      doCall();
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  /*
+  function onHangup() {
+    console.log("Hanging up.");
+    UI.transitionToDone();
+    stop();
+
+    // will trigger BYE from server
+    // COMM.disconnect();
+  }
+
+  function stop() {
+    started = false;
+    // isRTCPeerConnection = true;
+    // isAudioMuted = false;
+    // isVideoMuted = false;
+    // COMM.disconnect();
+  }
+  */
+
+  function enterFullScreen() {
+    container.webkitRequestFullScreen();
+  }
+
+  setTimeout(initialize, 1);
+
+  // Send BYE on refreshing(or leaving) a demo page
+  // to ensure the room is cleaned for next session.
+  window.addEventListener('beforeunload', function() {
+    COMM.sendSync({type: 'bye'});
+  });
+
+
+
+
+
+
+
+
+
+  /*
+  function toggleVideoMute() {
+    if (localStream.videoTracks.length === 0) {
+      console.log("No local video available.");
+      return;
+    }
+
+    if (isVideoMuted) {
+      for (i = 0; i < localStream.videoTracks.length; i++) {
+        localStream.videoTracks[i].enabled = true;
+      }
+      console.log("Video unmuted.");
+    } else {
+      for (i = 0; i < localStream.videoTracks.length; i++) {
+        localStream.videoTracks[i].enabled = false;
+      }
+      console.log("Video muted.");
+    }
+
+    isVideoMuted = !isVideoMuted;
+  }
+
+  function toggleAudioMute() {
+    if (localStream.audioTracks.length === 0) {
+      console.log("No local audio available.");
+      return;
+    }
+
+    if (isAudioMuted) {
+      for (i = 0; i < localStream.audioTracks.length; i++) {
+        localStream.audioTracks[i].enabled = true;
+      }
+      console.log("Audio unmuted.");
+    } else {
+      for (i = 0; i < localStream.audioTracks.length; i++){
+        localStream.audioTracks[i].enabled = false;
+      }
+      console.log("Audio muted.");
+    }
+
+    isAudioMuted = !isAudioMuted;  
+  }
+
+  // Ctrl-D: toggle audio mute; Ctrl-E: toggle video mute.
+  // On Mac, Command key is instead of Ctrl.
+  // Return false to screen out original Chrome shortcuts.
+  document.onkeydown = function() {
+    /*
+    if (navigator.appVersion.indexOf("Mac") != -1) {
+      if (event.metaKey && event.keyCode === 68) {
+        toggleAudioMute();
+        return false;
+      }
+      if (event.metaKey && event.keyCode === 69) {
+        toggleVideoMute();
+        return false;
+      }
+    } else {
+      if (event.ctrlKey && event.keyCode === 68) {
+        toggleAudioMute();
+        return false;
+      }
+      if (event.ctrlKey && event.keyCode === 69) {
+        toggleVideoMute();
+        return false;
+      }
+    }
+  }
+  */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</script>
+  <div id="">
+    <a href="/">EXIT!</a> &nbsp;
+    <a id="a1">Action 1</a>
+    <a id="a2">Action 2</a>
+    <a id="a3">Action 3</a>
+    <a id="a4">Action 4</a> &nbsp;
+
+    <a id="call">call</a> |
+    <a id="maybestart">maybestart</a> |
+    <a id="ready">ready</a>
+     &nbsp;
+    <span id="status">Loading...</span>
+  </div>
+  <p>
+    #{{ room_key }} init={{ initiator }}, user={{ me }}, users=[{{ room_user1 }}, {{ room_user2 }}]
+  </p>
+  <div>
+    <h3>You, Remote, You copy:</h3>
+    <video width="320" height="240" id="localVideo" autoplay="autoplay" style="border:1px solid #f0f;"></video>
+
+    <video width="320" height="240" id="remoteVideo" autoplay="autoplay" style="border:1px solid #f0f;"></video>
+    <video width="320" height="240" id="miniVideo" autoplay="autoplay" style="border:1px solid #f0f;"></video>
+  </div>
+  <div id="container" ondblclick="enterFullScreen()"></div>
+  container
+  <div id="card">
+      <div id="mini">
+        mini
+      </div>
+    <div id="remote">
+    remote
+    </div>
+    <div id="local">
+      local
+    </div>
+  </div>
+  <div id="footer">
+  </div>
+  <a href="http://www.webrtc.org">
+  <img id="logo" alt="WebRTC" src="images/webrtc_black_20p.png">
+  </a>
+</div>
+</body>
+</html>
