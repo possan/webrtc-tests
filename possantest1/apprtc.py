@@ -100,15 +100,12 @@ class MessagePage(webapp2.RequestHandler):
 			other_user = room.get_other_user(user)
 
 			if message_obj['type'] == 'bye':
-				room.remove_user(user)
+				# room.remove_user(user)
 				logging.info('User ' + user + ' quit from room ' + room_key)
-				logging.info('Room ' + room_key + ' has state ' + str(room))
 
-			# user = self.request.get('u')
-				# so some broadcasting
-				#if message_obj['type'] == 'broadcast-users':
-				#logging.info('Broadcast users')
-				#	if other_user:
+			room.touch()
+			room.put()
+
 			if other_user:
 				channel.send_message(room_key+'/'+other_user, message)
 
@@ -135,8 +132,13 @@ class RoomPage(webapp2.RequestHandler):
 		user = get_user_cookie(self)
 		room = model.Room.get_by_key_name(room_key)
 		if not room:
-			room = model.Room(key_name = room_key, seed = random.nextint())
+			room = model.Room(key_name = room_key)
+			room.reset()
+		elif room.expired():
+			room.reset()
 		room.add_user(user)
+		room.touch()
+		room.put()
 		token = channel.create_channel(room_key+'/'+user)
 		# room.put()
 		pc_config = make_pc_config(room.stun_server, room.turn_server)
@@ -145,6 +147,7 @@ class RoomPage(webapp2.RequestHandler):
 		logging.info("user=%s" % (user))
 		logging.info("room.user1=%s" % (room.user1))
 		logging.info("room.user2=%s" % (room.user2))
+		logging.info("room.seed=%s" % (room.seed))
 		if user == room.user1:
 			initiator = 1
 		logging.info("initator=%s" % (initiator))

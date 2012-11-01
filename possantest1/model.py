@@ -15,7 +15,9 @@ class Room(db.Model):
 	stun_server = db.StringProperty()
 	turn_server = db.StringProperty()
 	debug = db.BooleanProperty()
-	seed = db.IntegerProperty();
+	seed = db.IntegerProperty()
+	meta = db.StringProperty()
+	changed = db.DateTimeProperty()
 
 	def __str__(self):
 		str = '['
@@ -44,24 +46,43 @@ class Room(db.Model):
 	def has_user(self, user):
 		return (user and (user == self.user1 or user == self.user2))
 
+	def expired(self):
+		dt = datetime.datetime.now()
+		elapsed = dt - self.changed
+		return elapsed > datetime.timedelta(minutes=20)
+
+	def reset(self):
+		self.meta = ''
+		self.user1 = None
+		self.user2 = None
+		self.seed = random.randrange(10000000, 99999999)
+		self.touch()
+
+	def touch(self):
+		self.changed = datetime.datetime.now();
+		# self.put()
+
 	def add_user(self, user):
 		if not self.user1:
 			if user != self.user2:
 				self.user1 = user
-				self.put()
+				self.touch()
+				#self.put()
 		elif not self.user2:
 			if user != self.user1:
 				self.user2 = user
-				self.put()
+				self.touch()
+				#self.put()
 
 	def remove_user(self, user):
 		if user == self.user2:
 			# second user disconnected
 			self.user2 = None
-			self.put()
+			self.touch()
+			#self.put()
 		if user == self.user1:
 			# first user disconnected, change initiator if any
 			self.user1 = self.user2
 			self.user2 = None
-			#if self.get_occupancy() > 0:
-			self.put()
+			self.touch()
+			#self.put()

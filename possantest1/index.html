@@ -6,7 +6,8 @@
 <meta http-equiv="X-UA-Compatible" content="chrome=1"/>
 <script src="/js/require.js" type="text/javascript"></script>
 <script src="/js/observable.js" type="text/javascript"></script>
-<script src="/js/Players.js" type="text/javascript"></script>
+<script src="/js/players.js" type="text/javascript"></script>
+<script src="/js/game.js" type="text/javascript"></script>
 <script src="/_ah/channel/jsapi"></script>
 <!-- type="text/javascript">
   (function() {
@@ -133,10 +134,15 @@
 
   var initiator = {{ initiator }};
 
-  var players = new Players({
-    initiator: '{{ initiator }}' == '1',
+  var players = new PlayerStates({
     user: '{{ me }}'
   });
+
+
+  var games = new GameStates({
+    initiator: '{{ initiator }}' == '1',
+  });
+
 
   var localVideo;
   var miniVideo;
@@ -148,7 +154,7 @@
   var mediaConstraints = {'has_audio':true, 'has_video':true};
   var isVideoMuted = false;
   var isAudioMuted = false;
-  var noLocalVideo = '{{ novideo }}';
+  var noLocalVideo = {{ novideo }};
   var room_seed = {{ room_seed }};
 
 
@@ -254,7 +260,7 @@
       'onmessage': function(message) {
         var data = JSON.parse(message.data);
         // console.log('incoming message', message);
-        console.log('COMM S->C:', data);
+        // console.log('COMM S->C:', data);
         COMM.observable.fire({type: 'message', message: data});
       },
       'onerror': function() {
@@ -281,24 +287,16 @@
   }
 
   COMM.send = function(message) {
-    console.log('COMM C->S:', message);
+    // console.log('COMM C->S:', message);
     var msgString = JSON.stringify(message);
     path = '/message?r='+encodeURIComponent(COMM.room);
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', path, true);
+    if (typeof(message._async) !== 'undefined' && !message._async)
+      xhr.open('POST', path, false);
+    else
+      xhr.open('POST', path, true);
     xhr.send(msgString);
   }
-
-  COMM.sendSync = function(message) {
-    var msgString = JSON.stringify(message);
-    console.log('COMM C->S (sync): ' + msgString);
-    path = '/message?r='+encodeURIComponent(COMM.room);
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', path, false);
-    xhr.send(msgString);
-  }
-
-
 
 
 
@@ -466,6 +464,7 @@
         var url = webkitURL.createObjectURL(event.stream);
         console.error("PEER: Remote stream added.");
         PEER.observable.fire({type:'add-stream', url:url, stream:event.stream});
+        players.localSetState('ingame');
       };
 
       pc.onremovestream = function(event) {
@@ -552,9 +551,9 @@
     var sdp = '';
     console.log("PEER: createAnswer");
    // if (isRTCPeerConnection) {
-   if (PEER.ready)
+    if (PEER.ready)
       pc.createAnswer(setLocalAndSendMessage, null, mediaConstraints);
-   else
+    else
       console.log('unable to create answer, peer connection not ready.');
    /* } else {
       var offer = pc.remoteDescription;
@@ -568,7 +567,7 @@
   }
 
   PEER.startStreaming = function(str) {
-    console.log("PEER: Start streaming; Adding local stream.", str);
+    console.log("PEER: Start streaming; Adding local stream.", str, PEER.ready);
     if (PEER.ready)
       pc.addStream(str);
   }
@@ -639,25 +638,20 @@
 
   function doCall() {
     console.log("Sending offer to peer.");
-    var sdp = PEER.createOffer();
-    // COMM.send({type: 'offer', sdp: sdp});
+    PEER.createOffer();
   }
-
-
 
   function doAnswer() {
     console.log("Sending answer to peer.");
-    var sdp = PEER.createAnswer();
-    // COMM.send({type: 'answer', sdp: sdp});
+    PEER.createAnswer();
   }
 
   function commcallback_message(msg) {
-    console.log('incoming message', msg);
+    console.log('incoming message: ' + JSON.stringify(msg));
 
+    // players.handleNetwork(msg);
 
-    players.handleNetwork(msg);
-
-
+    players.peerEvent(msg);
 
     if (msg.type === 'action') {
       UI.highlightAction(msg.action);
@@ -667,7 +661,7 @@
       // doCall();
     } else if (msg.type === 'pong') {
       console.log('Got pong, trying to call..');
-      // doCall();
+      // maybeStart();
     } else if (msg.type === 'hello') {
       console.log('Got hello, trying to call..');
       // doCall();
@@ -701,13 +695,8 @@
         UI.setStatus('Creating connection...');
         break;
       case 'connected':
-        {
-          UI.setStatus('Connected.');
-          players.connect();
-          // COMM.send({type:'peer-connected'});
-          // if (initiator)
-          //   maybeStart();
-        }
+        UI.setStatus('Connected.');
+        players.localConnect();
         break;
       case 'message':
         commcallback_message(event.message);
@@ -791,16 +780,18 @@
       case 'connected':
         {
           UI.setStatus('Camera alive!');
+          players.localSetState('video');
           localVideo.style.opacity = 1;
           localVideo.src = event.url;
           miniVideo.src = event.url;
           localStream = event.stream;
           // if (initiator)
-          //  maybeStart();
+          // maybeStart();
           setTimeout(function() {
             // doCall();
             COMM.send({type:'video-ready'});
             COMM.send({type:'ping'});
+            // maybeStart();
           }, 300);
         }
         break;
@@ -823,28 +814,85 @@
     COMM.listen(commcallback);
     PEER.listen(peercallback);
     CAMERA.listen(cameracallback);
-    players.local.listen(playerlocallisten);
-    players.network.listen(playernetworklisten);
+
+    PEER.connect({{ pc_config|safe }});
+
+    players.onSendBroadcast.listen(function(event){
+      COMM.send(event);
+    });
+
+    players.onUserStateChanged.listen(function(event) {
+      games.peerChangedState(event.user, event.state);
+    });
+
+    players.onBroadcastEvent.listen(function(event){
+      console.log('event broadcast to us', event);
+      if (event.type === 'action') {
+        UI.highlightAction(event.action);
+      }
+      else {
+        games.peerEvent(event);
+      }
+    });
+
+    games.setStateCalculator(function(query) {
+      if (query.users.length == 2 && query.all == 'ingame')
+        return 'ingame';
+      // if (query.users.indexOf('ingame') != -1 &&
+      // query.users.indexOf('ingame') != -1 &&
+      // ) return 'waiting-for-video';
+      if (query.users.length == 2 && query.all == 'video')
+        return 'video';
+      if (query.users.length == 2 && query.all == 'connected')
+        return 'waiting-for-video';
+      return 'waiting-for-peer';
+    })
+
+    games.onLeaveState.listen(function(change) {
+      console.log('Entering state', change.state, 'to', change.newstate);
+    });
+
+    games.onEnterState.listen(function(change) {
+      console.log('Entering state', change.state, 'from', change.oldstate);
+      if (change.state == 'ingame') {
+        UI.setStatus('Game: both are in game!!');
+        UI.transitionToActive();
+      } else if (change.state == 'video') {
+        UI.setStatus('Game: both has turned on video!');
+        // if (games.initiator)
+        maybeStart();
+      } else if (change.state == 'waiting-for-video') {
+        UI.setStatus('Game: waiting for video!');
+        UI.transitionToWaiting();
+      } else if (change.state == 'waiting-for-peer') {
+        UI.setStatus('Game: waiting for peer!');
+   //     if (change.laststate == 'video')
+        UI.transitionToWaiting();
+      }
+    });
+
+    games.onSendBroadcast.listen(function(event) {
+      players.localBroadcastEvent(event);
+    });
+
+//    players.local.listen(playerlocallisten);
+//    players.network.listen(playernetworklisten);
 
     COMM.connect('{{ token }}', '{{ room_key }}');
     COMM.send({type:'hello'});
     CAMERA.connect();
 
     document.getElementById('a1').addEventListener('click', function(e) {
-      COMM.send({type: 'action', action: 1 });
-      UI.highlightAction(1);
+      players.localBroadcastEvent({type: 'action', action: 1 });
     });
     document.getElementById('a2').addEventListener('click', function(e) {
-      COMM.send({type: 'action', action: 2 });
-      UI.highlightAction(2);
+      players.localBroadcastEvent({type: 'action', action: 2 });
     });
     document.getElementById('a3').addEventListener('click', function(e) {
-      COMM.send({type: 'action', action: 3 });
-      UI.highlightAction(3);
+      players.localBroadcastEvent({type: 'action', action: 3 });
     });
     document.getElementById('a4').addEventListener('click', function(e) {
-      COMM.send({type: 'action', action: 4 });
-      UI.highlightAction(4);
+      players.localBroadcastEvent({type: 'action', action: 4 });
     });
     document.getElementById('call').addEventListener('click', function(e) {
       doCall();
@@ -899,12 +947,13 @@
 
   function maybeStart() {
 
-
-
-
-
-
     console.log('maybestart...');
+
+    if (!PEER.ready) {
+      console.log('skipping maybestart, not ready.');
+      return;
+    }
+
 /*    if (started) {
       console.log('not starting, because already started.');
       return;
@@ -919,12 +968,14 @@
     }
     UI.setStatus("Connecting...");
  */
-    PEER.connect({{ pc_config|safe }});
+    UI.setStatus('Start streaming localstream over peer connection');
     PEER.startStreaming(localStream);
+    // if (initiator) {
+    UI.setStatus("Creating peer connection...");
  //   started = true;
     // Caller initiates offer to peer.
-    if (initiator)
-      doCall();
+    doCall();
+    // }
   }
 
 
@@ -973,7 +1024,7 @@
   // Send BYE on refreshing(or leaving) a demo page
   // to ensure the room is cleaned for next session.
   window.addEventListener('beforeunload', function() {
-    COMM.sendSync({type: 'bye'});
+    players.localDisconnect();
   });
 
 

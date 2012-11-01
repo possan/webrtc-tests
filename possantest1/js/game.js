@@ -21,15 +21,8 @@ g->localEvent(event);
 g->onEvent.listen(callback)
 	// on incoming event
 
-
-
-
-
-
-
 p->handlePeerEvent(event);
 	{ type: 'peer-change-state', state: 'x', user: 'y' }
-
 
 g->peerBroadcastSetState(state);
 g->onStateChanged.listen(callback(g, newstate, oldstate));
@@ -50,13 +43,13 @@ g->onBroadcast.listen(callback(event));
 
 var GameStates = function(opts) {
 	this.options = opts || {};
+	this.initiator = this.options.initiator || false;
 	this.state = this.options.state || '';
 	this.stateCalculator = this.options.stateCalculator || undefined;
 	this.users = this.options.users || [];
 	this.states = {};
 	this.onLeaveState = new Observable();
 	this.onEnterState = new Observable();
-	this.onGameEvent = new Observable();
 	this.onSendBroadcast = new Observable();
 }
 
@@ -81,26 +74,47 @@ GameStates.prototype._getPreferredGameStateQuery = function(users, states) {
 		unique: uniquelist,
 		all: (uniquelist.length == 1) ? uniquelist[0] : ''
 	};
-	console.log('query', q);
+	console.log('GAMESTATES::_getPreferredGameStateQuery query', q);
 	return q;
 }
 
-GameStates.prototype._getPreferredGameState = function(users, states) {
-	var q = this._getPreferredGameStateQuery(users, states);
+GameStates.prototype._getPreferredGameState = function(query) {
 	if (this.stateCalculator)
-		return this.stateCalculator(q);
+		return this.stateCalculator(query);
 	return '';
 }
 
 GameStates.prototype._changeGameState = function(newstate) {
+	console.log('GAMESTATES::_changeGameState', newstate, 'from', this.state);
 	if (newstate == this.state)
 		return;
 	this.onLeaveState.fire({ state: this.state, nextstate: newstate });
 	this.onEnterState.fire({ state: newstate, laststate: this.state });
-	this.state = newstate;
+		this.state = newstate;
+	if (this.initiator) {
+		this.onSendBroadcast.fire({
+			type: 'game-change-state',
+			state: newstate,
+			users: this.users,
+			userstates: this.userstates
+		});
+	}
+}
+
+GameStates.prototype.peerEvent = function(event) {
+	if (event.type == 'game-change-state') {
+		if (!this.initiator) {
+			if (event.users)
+				this.users = event.users;
+			if (event.userstates)
+				this.userstates = event.userstates;
+			this._changeGameState(event.state);
+		}
+	}
 }
 
 GameStates.prototype.peerChangedState = function(user, state) {
+	console.log('GAMESTATES::peerChangedState', user, state);
 	if (this.users.indexOf(user) == -1)
 		this.users.push(user);
 	if (typeof(this.states[user]) == 'undefined')
@@ -108,7 +122,10 @@ GameStates.prototype.peerChangedState = function(user, state) {
 	if (this.states[user] == state)
 		return;
 	this.states[user] = state;
-	var newstate = this._getPreferredGameState(this.users, this.states);
-	this._changeGameState(newstate);
+	if (initiator) {
+		var query = this._getPreferredGameStateQuery(this.users, this.states);
+		var newstate = this._getPreferredGameState(query);
+		this._changeGameState(newstate);
+	}
 }
 

@@ -1,16 +1,5 @@
 /*
 
-
-
-
-
-
-
-
-
-
-
-
 var p = new Players({
 	maxplayers: 2,
 	initiator: false,
@@ -50,9 +39,11 @@ p->localConnect();
 	{ type: 'peer-connect', user: ME, broadcast: false }
 */
 PlayerStates.prototype.localConnect = function() {
+	console.log('PLAYERSTATES::localConnect');
 	this.onSendBroadcast.fire({
 		type: 'peer-connect',
-		user: this.user
+		user: this.user,
+		_broadcast: true
 	});
 }
 
@@ -61,9 +52,11 @@ p->localDisconnect();
 	{ type: 'peer-disconnect', user: ME, broadcast: false } (synchronous)
 */
 PlayerStates.prototype.localDisconnect = function() {
+	console.log('PLAYERSTATES::localDisconnect');
 	this.onSendBroadcast.fire({
 		type: 'peer-disconnect',
 		user: this.user,
+		_broadcast: true,
 		_async: false
 	});
 }
@@ -73,6 +66,7 @@ p->localSetState(state);
 	{ type: 'peer-change-state', state: state, user: ME, broadcast: true }
 */
 PlayerStates.prototype.localSetState = function(state) {
+	console.log('PLAYERSTATES::localSetState');
 	this.onSendBroadcast.fire({
 		type: 'peer-change-state',
 		user: this.user,
@@ -86,6 +80,7 @@ p->localBroadcastEvent(event);
 	{ type: 'peer-event', event: event, user: ME, broadcast: true }
 */
 PlayerStates.prototype.localBroadcastEvent = function(event) {
+	console.log('PLAYERSTATES::localBroadcastEvent', event);
 	this.onSendBroadcast.fire({
 		type: 'peer-event',
 		user: this.user,
@@ -111,21 +106,23 @@ incoming game events:
 */
 
 PlayerStates.prototype._setState = function(user, state) {
+	console.log('PLAYERSTATES::_setState', user, state);
 	if (this.users.indexOf(user) == -1)
 		this.users.push(user);
-	if (this.states[user] != state) {
-		this.states[user] = state;
-		// change event!
-		this.onUserStateChanged.fire({
-			user: user,
-			state: state,
-			users: this.users,
-			states: this.states
-		});
-	}
+	if (this.states[user] == state)
+		return;
+ 	this.states[user] = state;
+	// change event!
+	this.onUserStateChanged.fire({
+		user: user,
+		state: state,
+		users: this.users,
+		states: this.states
+	});
 }
 
 PlayerStates.prototype.peerEvent = function(event) {
+	console.log('PLAYERSTATES::peerEvent', event);
 	switch(event.type) {
 		case 'peer-connect':
 			this._setState(event.user, 'connected');
