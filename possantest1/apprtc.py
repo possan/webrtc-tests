@@ -95,34 +95,75 @@ class MessagePage(webapp2.RequestHandler):
 		logging.info('user='+user)
 		room_key = self.request.get('r')
 		room = model.Room.get_by_key_name(room_key)
+
+		# handle special messages here...
+
+		if message_obj['type'] == 'game-set-meta':
+			k = message_obj['key']
+			v = message_obj['value']
+			logging.info("set-meta key=" + k)
+			logging.info("set-meta value=" + v)
+			o = {}
+			try:
+				o = json.loads(room.meta)
+			except Exception:
+				pass
+			o[k] = v
+			room.meta = json.dumps(o)
+			logging.info("set-meta json=" + room.meta)
+			pass
+
+		if message_obj['type'] == 'bye':
+			pass
+
 		logging.info('room='+room_key)
-		if room:
-			other_user = room.get_other_user(user)
-
-			if message_obj['type'] == 'bye':
-				# room.remove_user(user)
-				logging.info('User ' + user + ' quit from room ' + room_key)
-
-			room.touch()
-			room.put()
-
-			if other_user:
-				channel.send_message(room_key+'/'+other_user, message)
-
-			if '_broadcast' in message_obj:
-				if message_obj['_broadcast']:
-					# do broadcast, (send to me too!)
-					channel.send_message(room_key+'/'+user, message)
-
-		else:
+		if not room:
 			logging.warning('Unknown room ' + room_key)
+			return
+
+		other_user = room.get_other_user(user)
+
+		if message_obj['type'] == 'game-set-meta':
+			k = message_obj['key']
+			v = message_obj['value']
+			logging.info("set-meta key=" + k)
+			logging.info("set-meta value=" + v)
+			o = {}
+			try:
+				o = json.loads(room.meta)
+			except Exception:
+				pass
+			o[k] = v
+			room.meta = json.dumps(o)
+			logging.info("set-meta json=" + room.meta)
+			#if other_user:
+			#	channel.send_message(room_key+'/'+other_user, message)
+
+		if message_obj['type'] == 'bye':
+			# room.remove_user(user)
+			logging.info('User ' + user + ' quit from room ' + room_key)
+			# if room is in playing-state, tell everyone that we
+			# changed state to paused
+			if room.meta['state'] == 'playing':
+				room.meta['state'] = 'paused'
+
+		room.touch()
+		room.put()
+
+		if other_user:
+			channel.send_message(room_key+'/'+other_user, message)
+
+		if '_broadcast' in message_obj:
+			if message_obj['_broadcast']:
+				# do broadcast, (send to me too!)
+				channel.send_message(room_key+'/'+user, message)
 
 
 class CreatePage(webapp2.RequestHandler):
 
 	def get(self):
 		user = get_user_cookie(self)
-		randomroom = generate_random(5)
+		randomroom = generate_random(6)
 		self.redirect('/room/'+randomroom)
 
 class RoomPage(webapp2.RequestHandler):
@@ -143,14 +184,22 @@ class RoomPage(webapp2.RequestHandler):
 		# room.put()
 		pc_config = make_pc_config(room.stun_server, room.turn_server)
 		room_link = 'https://possantest1.appspot.com/?r=' + room_key
-		initiator = 0
 		logging.info("user=%s" % (user))
 		logging.info("room.user1=%s" % (room.user1))
 		logging.info("room.user2=%s" % (room.user2))
 		logging.info("room.seed=%s" % (room.seed))
+		logging.info("room.meta=%s" % (room.meta))
+		initiator = 0
 		if user == room.user1:
 			initiator = 1
 		logging.info("initator=%s" % (initiator))
+
+		o = {}
+		try:
+			o = json.loads(room.meta)
+		except Exception:
+			pass
+
 		template_values = {
 			'token': token,
 			'me': user,
@@ -160,6 +209,7 @@ class RoomPage(webapp2.RequestHandler):
 			'room_user1': room.user1,
 			'room_user2': room.user2,
 			'room_seed': room.seed,
+			'room_meta': json.dumps(o),
 			'initiator': initiator,
 			'pc_config': json.dumps(pc_config)
 		}

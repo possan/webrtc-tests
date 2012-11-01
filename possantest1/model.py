@@ -66,23 +66,40 @@ class Room(db.Model):
 		if not self.user1:
 			if user != self.user2:
 				self.user1 = user
+				o = {}
+				try:
+					o = json.loads(self.meta)
+				except Exception:
+					pass
+				o['initiator'] = self.user1
+				o['user1'] = self.user1
+				self.meta = json.dumps(o)
 				self.touch()
 				#self.put()
 		elif not self.user2:
 			if user != self.user1:
 				self.user2 = user
+				o = {}
+				try:
+					o = json.loads(self.meta)
+				except Exception:
+					pass
+				o['user2'] = self.user2
+				self.meta = json.dumps(o)
 				self.touch()
 				#self.put()
 
 	def remove_user(self, user):
 		if user == self.user2:
+			pass
 			# second user disconnected
-			self.user2 = None
-			self.touch()
-			#self.put()
+			# self.user2 = None
+			# self.touch()
+			# self.put()
 		if user == self.user1:
+			pass
 			# first user disconnected, change initiator if any
-			self.user1 = self.user2
-			self.user2 = None
-			self.touch()
-			#self.put()
+			# self.user1 = self.user2
+			# self.user2 = None
+			# self.touch()
+			# self.put()

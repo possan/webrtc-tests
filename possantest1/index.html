@@ -132,16 +132,6 @@
 
 
 
-  var initiator = {{ initiator }};
-
-  var players = new PlayerStates({
-    user: '{{ me }}'
-  });
-
-
-  var games = new GameStates({
-    initiator: '{{ initiator }}' == '1',
-  });
 
 
   var localVideo;
@@ -152,11 +142,29 @@
   var channel;
   var started = false;
   var mediaConstraints = {'has_audio':true, 'has_video':true};
-  var isVideoMuted = false;
-  var isAudioMuted = false;
+
   var noLocalVideo = {{ novideo }};
   var room_seed = {{ room_seed }};
+  var room_meta = {{ room_meta|safe }};
+  var initiator = {{ initiator }};
 
+  var users = [];
+  if (room_meta['user1'])
+    users.push(room_meta['user1']);
+  if (room_meta['user2'])
+    users.push(room_meta['user2']);
+
+  var players = new PlayerStates({
+    user: '{{ me }}',
+    users: users
+  });
+
+  var games = new GameStates({
+    user: '{{ me }}',
+    users: users,
+    initiator: initiator,
+    meta: room_meta
+  });
 
 
 
@@ -206,7 +214,11 @@
   UI.transitionToWaiting = function() {
     console.log('transitionToWaiting');
     // card.style.webkitTransform = "rotateY(0deg)";
-    // setTimeout(function() { localVideo.src = miniVideo.src; miniVideo.src = ""; remoteVideo.src = "" }, 500);
+    setTimeout(function() {
+      // localVideo.src = miniVideo.src;
+      // miniVideo.src = "";
+      // remoteVideo.src = "";
+    }, 500);
     // localVideo.src = miniVideo.src;
     // miniVideo.src = "";
     // remoteVideo.src = "";
@@ -214,7 +226,6 @@
     localVideo.style.opacity = 1.0;
     miniVideo.style.opacity = 0.5;
     remoteVideo.style.opacity = 0.5;
-    resetStatus();
   }
 
   UI.transitionToDone = function() {
@@ -498,8 +509,12 @@
     // if (isRTCPeerConnection) {
     // var candidate = new RTCIceCandidate({sdpMLineIndex:msg.label, candidate:msg.candidate});
     if (PEER.ready) {
-       var candidate = new RTCIceCandidate({sdpMLineIndex:msg.label, candidate:msg.candidate});
-      pc.addIceCandidate(candidate);
+      var candidate = new RTCIceCandidate({sdpMLineIndex:msg.label, candidate:msg.candidate});
+      try {
+        pc.addIceCandidate(candidate);
+      } catch(e) {
+        console.error(e);
+      }
     } else
       console.log('unable to add candidate, peer connection not ready.');
     //} else {
@@ -572,6 +587,16 @@
       pc.addStream(str);
   }
 
+  PEER.disconnect = function() {
+    PEER.ready = false
+    pc.close();
+    pc = null;
+  }
+
+
+
+
+
 
 
 
@@ -641,18 +666,11 @@
     PEER.createOffer();
   }
 
-  function doAnswer() {
-    console.log("Sending answer to peer.");
-    PEER.createAnswer();
-  }
-
   function commcallback_message(msg) {
     console.log('incoming message: ' + JSON.stringify(msg));
-
-    // players.handleNetwork(msg);
-
     players.peerEvent(msg);
-
+    games.peerEvent(msg);
+    // players.handleNetwork(msg);
     if (msg.type === 'action') {
       UI.highlightAction(msg.action);
     } else if (msg.type === 'ping') {
@@ -667,7 +685,8 @@
       // doCall();
     } else if (msg.type === 'offer') {
       PEER.gotOffer(msg);
-      doAnswer();
+      console.log("Sending answer to peer.");
+      PEER.createAnswer();
  //     players.ready();
     } else if (msg.type === 'peer-connected') {
       UI.setStatus('Peer connected and ok');
@@ -684,6 +703,7 @@
     } else if (msg.type === 'candidate') {
       PEER.addCandidate(msg);
     } else if (msg.type === 'bye') {
+      PEER.close();
       UI.setStatus('Peer disconnected.');
       UI.transitionToWaiting();
     }
@@ -726,7 +746,7 @@
         break;
       case 'add-stream':
         {
-          UI.setStatus('Got remote stream!');
+          // UI.setStatus('Got remote stream!');
           // miniVideo.src = localVideo.src;
           remoteVideo.src = event.url;
           remoteStream = event.stream;
@@ -734,42 +754,9 @@
         }
         break;
       case 'connecting':
-        UI.setStatus('Creating PeerConnection...');
+        // UI.setStatus('Creating PeerConnection...');
         break;
     }
-  }
-
-  function playerlocallisten(event) {
-    console.log('player local event (outgoing)', event);
-    switch (event.type) {
-      case 'accepted':
-        UI.setStatus('Local player accepted by remote');
-        // players.ready();
-        // maybeStart();
-        break;
-      case 'peer-connected':
-        UI.setStatus('Local peer-connected event');
-        // players.ready();
-        // maybeStart();
-        break;
-      case 'pause':
-        UI.setStatus('Pause game!');
-        break;
-      case 'start':
-        UI.setStatus('Start game!');
-        // connect peer junk
-        // doCall();
-        // maybeStart();
-        break;
-      case 'become-initiator':
-        UI.setStatus('Become initiator!');
-        break;
-    }
-  }
-
-  function playernetworklisten(event) {
-    console.log('player network event (outgoing)', event);
-    COMM.send(event);
   }
 
   function cameracallback(event) {
@@ -778,22 +765,20 @@
         UI.setStatus('Waiting for camera...');
         break;
       case 'connected':
-        {
-          UI.setStatus('Camera alive!');
-          players.localSetState('video');
-          localVideo.style.opacity = 1;
-          localVideo.src = event.url;
-          miniVideo.src = event.url;
-          localStream = event.stream;
-          // if (initiator)
-          // maybeStart();
-          setTimeout(function() {
-            // doCall();
-            COMM.send({type:'video-ready'});
-            COMM.send({type:'ping'});
-            // maybeStart();
-          }, 300);
-        }
+        // UI.setStatus('Camera alive!');
+        players.localSetState('video');
+        localVideo.style.opacity = 1;
+        localVideo.src = event.url;
+        miniVideo.src = event.url;
+        localStream = event.stream;
+        // if (initiator)
+        // maybeStart();
+        // setTimeout(function() {
+        // doCall();
+        // COMM.send({type:'video-ready'});
+        // COMM.send({type:'ping'});
+        // maybeStart();
+        // }, 300);
         break;
       case 'failed':
         UI.setStatus('No camera available!');
@@ -809,7 +794,6 @@
     localVideo = document.getElementById("localVideo");
     miniVideo = document.getElementById("miniVideo");
     remoteVideo = document.getElementById("remoteVideo");
-    resetStatus();
 
     COMM.listen(commcallback);
     PEER.listen(peercallback);
@@ -860,7 +844,9 @@
       } else if (change.state == 'video') {
         UI.setStatus('Game: both has turned on video!');
         // if (games.initiator)
-        maybeStart();
+        setTimeout(function(){
+          maybeStart();
+        }, 1000);
       } else if (change.state == 'waiting-for-video') {
         UI.setStatus('Game: waiting for video!');
         UI.transitionToWaiting();
@@ -875,8 +861,16 @@
       players.localBroadcastEvent(event);
     });
 
-//    players.local.listen(playerlocallisten);
-//    players.network.listen(playernetworklisten);
+    games.onMetaChanged.listen(function(key) {
+      console.log('onMetaChanged', key);
+      if (key == 'text1')
+        document.getElementById('text1').value = games.meta['text1'];
+      if (key == 'text2')
+        document.getElementById('text2').value = games.meta['text2'];
+      if (key == 'text3')
+        document.getElementById('text3').value = games.meta['text3'];
+      document.getElementById('state').innerText = JSON.stringify(games.meta);
+    });
 
     COMM.connect('{{ token }}', '{{ room_key }}');
     COMM.send({type:'hello'});
@@ -903,6 +897,23 @@
     document.getElementById('maybestart').addEventListener('click', function(e) {
       maybeStart();
     });
+    document.getElementById('text1').addEventListener('keyup', function(e) {
+      var v = document.getElementById('text1').value;
+      players.localSetMeta('text1', v);
+    });
+    document.getElementById('text2').addEventListener('keyup', function(e) {
+      var v = document.getElementById('text2').value;
+      players.localSetMeta('text2', v);
+    });
+    document.getElementById('text3').addEventListener('keyup', function(e) {
+      var v = document.getElementById('text3').value;
+      players.localSetMeta('text3', v);
+    });
+
+    document.getElementById('text1').value = games.meta['text1'] || '';
+    document.getElementById('text2').value = games.meta['text2'] || '';
+    document.getElementById('text3').value = games.meta['text3'] || '';
+    document.getElementById('state').innerText = JSON.stringify(games.meta);
   }
 
 
@@ -933,17 +944,6 @@
 
 
 
-
-
-  function resetStatus() {
-    /*
-    if (!initiator) {
-      UI.setStatus("Waiting for someone to join: <a href=\"{{ room_link }}\">{{ room_link }}</a>");
-    } else {
-      UI.setStatus("Initializing...");
-    }
-    */
-  }
 
   function maybeStart() {
 
@@ -992,156 +992,17 @@
 
 
 
-
-
-
-
-  /*
-  function onHangup() {
-    console.log("Hanging up.");
-    UI.transitionToDone();
-    stop();
-
-    // will trigger BYE from server
-    // COMM.disconnect();
-  }
-
-  function stop() {
-    started = false;
-    // isRTCPeerConnection = true;
-    // isAudioMuted = false;
-    // isVideoMuted = false;
-    // COMM.disconnect();
-  }
-  */
-
   function enterFullScreen() {
     container.webkitRequestFullScreen();
   }
 
   setTimeout(initialize, 1);
 
-  // Send BYE on refreshing(or leaving) a demo page
-  // to ensure the room is cleaned for next session.
   window.addEventListener('beforeunload', function() {
     players.localDisconnect();
   });
 
-
-
-
-
-
-
-
-
-  /*
-  function toggleVideoMute() {
-    if (localStream.videoTracks.length === 0) {
-      console.log("No local video available.");
-      return;
-    }
-
-    if (isVideoMuted) {
-      for (i = 0; i < localStream.videoTracks.length; i++) {
-        localStream.videoTracks[i].enabled = true;
-      }
-      console.log("Video unmuted.");
-    } else {
-      for (i = 0; i < localStream.videoTracks.length; i++) {
-        localStream.videoTracks[i].enabled = false;
-      }
-      console.log("Video muted.");
-    }
-
-    isVideoMuted = !isVideoMuted;
-  }
-
-  function toggleAudioMute() {
-    if (localStream.audioTracks.length === 0) {
-      console.log("No local audio available.");
-      return;
-    }
-
-    if (isAudioMuted) {
-      for (i = 0; i < localStream.audioTracks.length; i++) {
-        localStream.audioTracks[i].enabled = true;
-      }
-      console.log("Audio unmuted.");
-    } else {
-      for (i = 0; i < localStream.audioTracks.length; i++){
-        localStream.audioTracks[i].enabled = false;
-      }
-      console.log("Audio muted.");
-    }
-
-    isAudioMuted = !isAudioMuted;  
-  }
-
-  // Ctrl-D: toggle audio mute; Ctrl-E: toggle video mute.
-  // On Mac, Command key is instead of Ctrl.
-  // Return false to screen out original Chrome shortcuts.
-  document.onkeydown = function() {
-    /*
-    if (navigator.appVersion.indexOf("Mac") != -1) {
-      if (event.metaKey && event.keyCode === 68) {
-        toggleAudioMute();
-        return false;
-      }
-      if (event.metaKey && event.keyCode === 69) {
-        toggleVideoMute();
-        return false;
-      }
-    } else {
-      if (event.ctrlKey && event.keyCode === 68) {
-        toggleAudioMute();
-        return false;
-      }
-      if (event.ctrlKey && event.keyCode === 69) {
-        toggleVideoMute();
-        return false;
-      }
-    }
-  }
-  */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-</script>
+  </script>
   <div id="">
     <a href="/">EXIT!</a> &nbsp;
     <a id="a1">Action 1</a>
@@ -1155,6 +1016,12 @@
      &nbsp;
     <span id="status">Loading...</span>
   </div>
+  <div>
+    <input type="text" value="" id="text1" />
+    <input type="text" value="" id="text2" />
+    <input type="text" value="" id="text3" />
+  </div>
+  <div><span id="state">loading state json...</span></div>
   <p>
     #{{ room_key }} init={{ initiator }}, user={{ me }}, users=[{{ room_user1 }}, {{ room_user2 }}]
   </p>
